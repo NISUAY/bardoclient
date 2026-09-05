@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- BOTÓN CUADRADO PARA RETROCEDER (Fijo arriba a la izquierda, 50x50px) -->
+    <div class="back-square-button" id="back-from-settings">
+        <svg xmlns="http://w3.org" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-arrow-narrow-left"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l14 0" /><path d="M5 12l6 6" /><path d="M5 12l6 -6" /></svg>
+    </div>
+
+    <!-- CONTENEDOR PRINCIPAL CON SCROLL CONTINUO -->
+    <div class="settings-scroll-container">
+        
+        <!-- ENCABEZADO DE LA PANTALLA -->
+        <div class="settings-header">
+            <h2 class="settings-main-title">CONFIGURACIÓN</h2>
+            <span class="settings-category-tag">Ajustes del Juego</span>
+        </div>
+
+        <!-- SECCIÓN 1: ASIGNACIÓN DE MEMORIA RAM -->
+        <div class="settings-row-block">
+            <div class="settings-text-side">
+                <h3 class="setting-title">Memoria Asignada</h3>
+                <p class="setting-description">Cuánta memoria RAM se le debe dedicar a la instancia del juego.</p>
+            </div>
+            
+            <!-- Zona interactiva de la RAM (Barra + Recuadro al lado) -->
+            <div class="setting-control-side-ram">
+                <div class="slider-wrapper">
+                    <span class="slider-limit-text">2.0GB</span>
+                    <input type="range" class="ram-slider" min="2" max="16" value="4">
+                    <span class="slider-limit-text">16.0GB</span>
+                </div>
+                <!-- Tarjeta robusta derecha del número igual a tu captura -->
+                <div class="ram-input-badge">
+                    <input type="text" class="ram-number-field" value="4.0GB">
+                    <span class="ram-sub-text">libre para asignar</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: MODO DE PANTALLA -->
+        <div class="settings-row-block">
+            <div class="settings-text-side">
+                <h3 class="setting-title">Resolución del Juego</h3>
+                <p class="setting-description">Configura el modo de visualización de la ventana de Minecraft.</p>
+                
+                <!-- Interruptor estilo checkbox suave -->
+                <label class="fullscreen-checkbox-label">
+                    <input type="checkbox" class="fullscreen-checkbox">
+                    ¿Iniciar en Pantalla Completa?
+                </label>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 3: SOPORTE Y AUXILIO DEL CLIENTE -->
+        <div class="settings-row-block" style="border-bottom: none;">
+            <div class="settings-text-side">
+                <h3 class="setting-title">Soporte del Cliente</h3>
+                <p class="setting-description">Si experimentas tirones o errores al entrar a un evento, usa esta opción.</p>
+                
+                <button class="auth-btn btn-guest" style="width: 280px; margin-top: 15px; height: 48px;">
+                    Reparar Archivos del Cliente
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

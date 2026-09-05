@@ -1,0 +1,23 @@
+# Dependencias y artefactos de Electron/Node
+node_modules/
+dist/
+out/
+release/
+
+# Registros y archivos temporales
+*.log
+logs/
+*.tmp
+*.temp
+.cache/
+
+# Archivos del sistema y editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Datos locales del launcher
+config.json
+*.local

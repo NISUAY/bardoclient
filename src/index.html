@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div class="main-content-full">
+        <!-- TÍTULO GRANDE ARRIBA -->
+        <h1 class="launcher-main-title">BARDO CLIENT</h1>
+
+        <!-- TARJETA CONTENEDORA PRINCIPAL -->
+        <div class="auth-card">
+            
+            <!-- BOTÓN CUADRADO PARA RETROCEDER (Mantiene tus 50px originales) -->
+            <div class="back-square-button hidden" id="back-to-methods">
+                <svg xmlns="http://w3.org" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-arrow-narrow-left"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l14 0" /><path d="M5 12l6 6" /><path d="M5 12l6 -6" /></svg>
+            </div>
+
+            <!-- ESTADO 1: SÓLO BOTONES EN ESPAÑOL Y OFICIALES -->
+            <div id="auth-methods" class="card-inner-flow">
+                <!-- Botón Microsoft (Ahora Verde Oficial y con Logo Real) -->
+                <button class="auth-btn btn-microsoft-official" id="btn-premium">
+                    <!-- SVG OFICIAL DE MICROSOFT -->
+                    <svg xmlns="http://w3.org" width="18" height="18" viewBox="0 0 23 23">
+                        <path fill="#f25022" d="M0 0h11v11H0z"/>
+                        <path fill="#7fba00" d="M12 0h11v11H12z"/>
+                        <path fill="#00a4ef" d="M0 12h11v11H0z"/>
+                        <path fill="#ffb900" d="M12 12h11v11H12z"/>
+                    </svg>
+                    Cuenta Oficial Microsoft
+                </button>
+
+                <!-- Botón Modo Nick -->
+                <button class="auth-btn btn-guest" id="btn-guest-mode">
+                    Ingresar con un Nick
+                </button>
+            </div>
+
+            <!-- ESTADO 2: FORMULARIO DE NICK CENTRADO -->
+            <div id="nick-form" class="card-inner-flow hidden">
+                <input type="text" class="username-input" id="input-nick" placeholder="Player" maxlength="16">
+                <button class="play-button" id="btn-login" style="width: 100%; justify-content: center;">
+                    INGRESAR
+                </button>
+            </div>
+
+        </div>
+        
+        <div class="footer-text">
+            © 2026 Bardo Client
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
