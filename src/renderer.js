@@ -17,6 +17,16 @@
     const nick = porId('input-nick');
     if (!btnPremium || !btnGuest || !btnIngresar || !btnVolver || !metodos || !formulario || !nick) return;
 
+    const controlesLogin = [btnPremium, btnGuest, btnIngresar, btnVolver, nick];
+    const establecerAutenticacionEnCurso = activa => {
+      controlesLogin.forEach(control => {
+        if ('disabled' in control) control.disabled = activa;
+        control.style.pointerEvents = activa ? 'none' : '';
+        control.style.filter = activa ? 'brightness(0.7)' : '';
+        control.style.cursor = activa ? 'wait' : '';
+      });
+    };
+
     btnGuest.addEventListener('click', () => {
       metodos.classList.add('hidden'); formulario.classList.remove('hidden'); btnVolver.classList.remove('hidden'); nick.focus();
     });
@@ -37,13 +47,13 @@
       }
     });
     btnPremium.addEventListener('click', async () => {
-      btnPremium.disabled = true;
+      establecerAutenticacionEnCurso(true);
       try {
         const resultado = await api.iniciarLoginMicrosoft();
         if (resultado.ok) navegar('inicio.html');
       } catch (error) {
         console.error('[Bardo] Inicio de sesión Microsoft cancelado o fallido:', error);
-        btnPremium.disabled = false;
+        establecerAutenticacionEnCurso(false);
       }
     });
   }
