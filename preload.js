@@ -1,5 +1,8 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
-// Contrato vacío y seguro para la maqueta. Se ampliará con APIs IPC explícitas
-// cuando comience la fase de persistencia o del motor de Minecraft.
-contextBridge.exposeInMainWorld('bardo', Object.freeze({}));
+contextBridge.exposeInMainWorld('bardo', Object.freeze({
+  guardarNick: nick => ipcRenderer.invoke('config:guardar-nick', nick),
+  obtenerPerfil: () => ipcRenderer.invoke('config:obtener-perfil'),
+  cerrarSesion: () => ipcRenderer.invoke('auth:cerrar-sesion'),
+  iniciarLoginMicrosoft: () => ipcRenderer.invoke('auth:microsoft')
+}));
