@@ -1,0 +1,15 @@
+{
+  "actualizacionesLauncher": {
+    "versionActual": "1.0.0"
+  },
+  "servidores": [
+    {
+      "id": "srv_01",
+      "nombre": "Bardo Oficial",
+      "activo": true,
+      "versionMinecraft": "1.20.1",
+      "requiereMods": true,
+      "cargadorMods": "fabric"
+    }
+  ]
+}
