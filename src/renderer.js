@@ -3,6 +3,10 @@
 
   const api = window.bardo;
   const NICK_VALIDO = /^[A-Za-z0-9_]{3,16}$/;
+  const SERVIDORES_OFICIALES = Object.freeze([
+    Object.freeze({ id: 'srv_01', nombre: 'Hispanicraft', activo: true }),
+    Object.freeze({ id: 'srv_02', nombre: 'Servidor 2', activo: true })
+  ]);
   const pagina = window.location.pathname.split('/').pop().toLowerCase() || 'index.html';
   const porId = id => document.getElementById(id);
   const navegar = archivo => { window.location.href = archivo; };
@@ -80,9 +84,50 @@
     avatar.src = `https://mc-heads.net/avatar/${encodeURIComponent(uuid)}/50`;
   }
 
+  function crearIconoServidor() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('class', 'icon icon-tabler icons-tabler-outline icon-tabler-server');
+    svg.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-2" /><path d="M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3l0 -2" /><path d="M7 8l0 .01" /><path d="M7 16l0 .01" />';
+    return svg;
+  }
+
+  function renderizarServidores() {
+    const contenedor = porId('contenedor-servidores');
+    if (!contenedor) return;
+
+    const fragmento = document.createDocumentFragment();
+    SERVIDORES_OFICIALES.filter(servidor => servidor.activo).forEach(servidor => {
+      const fila = document.createElement('div');
+      fila.className = 'sidebar-menu-row';
+      fila.dataset.serverId = servidor.id;
+
+      const icono = document.createElement('div');
+      icono.className = 'server-icon';
+      icono.append(crearIconoServidor());
+
+      const nombre = document.createElement('span');
+      nombre.className = 'sidebar-text-fade item-label-text';
+      nombre.textContent = servidor.nombre;
+
+      fila.append(icono, nombre);
+      fila.addEventListener('click', () => console.log(`[Bardo] Servidor seleccionado: ${servidor.id}`));
+      fragmento.append(fila);
+    });
+    contenedor.replaceChildren(fragmento);
+  }
+
   async function iniciarInicio() {
     const nombreCuenta = document.querySelector('.account-player-name');
     const cerrarSesion = document.querySelector('.account-logout-btn');
+    renderizarServidores();
     porId('btn-settings')?.addEventListener('click', () => navegar('ajustes.html'));
     cerrarSesion?.addEventListener('click', async () => {
       try {

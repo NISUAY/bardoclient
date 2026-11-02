@@ -128,12 +128,15 @@ ipcMain.handle('auth:microsoft', async () => {
 
 function crearVentanaPrincipal() {
   const ventana = new BrowserWindow({
-    width: 1000, height: 600, resizable: false, title: 'Bardo Client',
+    width: 1000, height: 600,
+    minWidth: 1000, minHeight: 600,
+    resizable: true, maximizable: true, title: 'Bardo Client',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true
     }
   });
+  ventana.setAspectRatio(1000 / 600);
   Menu.setApplicationMenu(null);
   ventana.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   ventana.webContents.on('page-title-updated', evento => evento.preventDefault());
