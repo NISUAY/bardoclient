@@ -196,6 +196,31 @@ body {
     position: relative;
 }
 
+.selected-server-info {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+#txt-server-name {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+#txt-server-version {
+    color: #7c7c7c;
+    font-size: 12px;
+    font-weight: 600;
+}
+
 /* 4. EL BOTÓN JUGAR VERDE CON ICONO INTERNO */
 .play-button {
     background-color: #3c8527; /* Tu verde deseado */

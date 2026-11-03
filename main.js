@@ -8,6 +8,17 @@ const NICK_VALIDO = /^[A-Za-z0-9_]{3,16}$/;
 const RUTA_INICIAL = path.join(__dirname, 'src', 'index.html');
 const RUTA_DATOS = path.join(app.getPath('appData'), 'bardoclient');
 const ARCHIVO_CONFIG = path.join(RUTA_DATOS, 'config.json');
+const URL_MANIFIESTO_REMOTO = 'https://raw.githubusercontent.com/NISUAY/bardoclient/main/manifiesto.json';
+const CATALOGO_SERVIDORES_RESPALDO = Object.freeze([
+  Object.freeze({
+    id: 'srv_01',
+    nombre: 'Hispanicraft',
+    activo: true,
+    versionMinecraft: '1.20.1',
+    requiereMods: true,
+    cargadorMods: 'fabric'
+  })
+]);
 let colaDeConfig = Promise.resolve();
 let loginMicrosoftEnCurso = false;
 
@@ -66,6 +77,52 @@ async function prepararAlmacenamiento() {
     await escribirConfig({});
   }
 }
+
+function normalizarCatalogoRemoto(manifiesto) {
+  if (!manifiesto || !Array.isArray(manifiesto.servidores)) {
+    throw new Error('El manifiesto remoto no contiene una lista de servidores válida.');
+  }
+
+  const servidores = manifiesto.servidores
+    .filter(servidor => servidor && typeof servidor === 'object')
+    .map(servidor => ({
+      id: typeof servidor.id === 'string' ? servidor.id.trim() : '',
+      nombre: typeof servidor.nombre === 'string' ? servidor.nombre.trim() : '',
+      activo: servidor.activo !== false,
+      versionMinecraft: typeof servidor.versionMinecraft === 'string' ? servidor.versionMinecraft.trim() : '',
+      requiereMods: Boolean(servidor.requiereMods),
+      cargadorMods: typeof servidor.cargadorMods === 'string' ? servidor.cargadorMods.trim() : 'vanilla'
+    }))
+    .filter(servidor => servidor.id && servidor.nombre && servidor.versionMinecraft);
+
+  if (!servidores.length) throw new Error('El manifiesto remoto no contiene servidores utilizables.');
+  return servidores;
+}
+
+async function descargarCatalogoRemoto() {
+  const controlador = new AbortController();
+  const temporizador = setTimeout(() => controlador.abort(), 8000);
+
+  try {
+    const respuesta = await fetch(URL_MANIFIESTO_REMOTO, {
+      headers: { Accept: 'application/json' },
+      signal: controlador.signal
+    });
+    if (!respuesta.ok) throw new Error(`Respuesta HTTP ${respuesta.status}.`);
+    return normalizarCatalogoRemoto(await respuesta.json());
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
+
+ipcMain.handle('pizarra:leer-remota', async () => {
+  try {
+    return { servidores: await descargarCatalogoRemoto(), origen: 'remoto' };
+  } catch (error) {
+    console.warn('[Bardo] No se pudo leer el manifiesto remoto; se usará el catálogo de respaldo:', error.message);
+    return { servidores: CATALOGO_SERVIDORES_RESPALDO, origen: 'respaldo' };
+  }
+});
 
 ipcMain.handle('config:guardar-nick', async (_evento, nick) => {
   if (typeof nick !== 'string' || !NICK_VALIDO.test(nick)) throw new Error('Nick inválido.');

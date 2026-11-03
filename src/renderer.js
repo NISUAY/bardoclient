@@ -3,9 +3,8 @@
 
   const api = window.bardo;
   const NICK_VALIDO = /^[A-Za-z0-9_]{3,16}$/;
-  const SERVIDORES_OFICIALES = Object.freeze([
-    Object.freeze({ id: 'srv_01', nombre: 'Hispanicraft', activo: true }),
-    Object.freeze({ id: 'srv_02', nombre: 'Servidor 2', activo: true })
+  const CATALOGO_SERVIDORES_RESPALDO = Object.freeze([
+    Object.freeze({ id: 'srv_01', nombre: 'Hispanicraft', activo: true, versionMinecraft: '1.20.1', requiereMods: true, cargadorMods: 'fabric' })
   ]);
   const pagina = window.location.pathname.split('/').pop().toLowerCase() || 'index.html';
   const porId = id => document.getElementById(id);
@@ -99,12 +98,27 @@
     return svg;
   }
 
-  function renderizarServidores() {
+  function etiquetaVersion(servidor) {
+    const cargador = servidor.requiereMods && servidor.cargadorMods
+      ? ` · ${servidor.cargadorMods}`
+      : '';
+    return `Minecraft ${servidor.versionMinecraft}${cargador}`;
+  }
+
+  function actualizarServidorSeleccionado(servidor) {
+    const nombre = porId('txt-server-name');
+    const version = porId('txt-server-version');
+    if (nombre) nombre.textContent = servidor.nombre;
+    if (version) version.textContent = etiquetaVersion(servidor);
+  }
+
+  function renderizarServidores(servidores) {
     const contenedor = porId('contenedor-servidores');
     if (!contenedor) return;
 
+    const servidoresActivos = servidores.filter(servidor => servidor.activo);
     const fragmento = document.createDocumentFragment();
-    SERVIDORES_OFICIALES.filter(servidor => servidor.activo).forEach(servidor => {
+    servidoresActivos.forEach(servidor => {
       const fila = document.createElement('div');
       fila.className = 'sidebar-menu-row';
       fila.dataset.serverId = servidor.id;
@@ -118,16 +132,30 @@
       nombre.textContent = servidor.nombre;
 
       fila.append(icono, nombre);
-      fila.addEventListener('click', () => console.log(`[Bardo] Servidor seleccionado: ${servidor.id}`));
+      fila.addEventListener('click', () => actualizarServidorSeleccionado(servidor));
       fragmento.append(fila);
     });
     contenedor.replaceChildren(fragmento);
+    if (servidoresActivos[0]) actualizarServidorSeleccionado(servidoresActivos[0]);
+  }
+
+  async function cargarCatalogoServidores() {
+    try {
+      const resultado = await api.leerPizarraRemota();
+      const servidores = Array.isArray(resultado?.servidores) && resultado.servidores.length
+        ? resultado.servidores
+        : CATALOGO_SERVIDORES_RESPALDO;
+      renderizarServidores(servidores);
+    } catch (error) {
+      console.error('[Bardo] No se pudo cargar el catálogo remoto:', error);
+      renderizarServidores(CATALOGO_SERVIDORES_RESPALDO);
+    }
   }
 
   async function iniciarInicio() {
     const nombreCuenta = document.querySelector('.account-player-name');
     const cerrarSesion = document.querySelector('.account-logout-btn');
-    renderizarServidores();
+    await cargarCatalogoServidores();
     porId('btn-settings')?.addEventListener('click', () => navegar('ajustes.html'));
     cerrarSesion?.addEventListener('click', async () => {
       try {
