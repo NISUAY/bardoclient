@@ -9,6 +9,7 @@
   const pagina = window.location.pathname.split('/').pop().toLowerCase() || 'index.html';
   const porId = id => document.getElementById(id);
   const navegar = archivo => { window.location.href = archivo; };
+  let servidorSeleccionado = null;
 
   function iniciarLogin() {
     const btnPremium = porId('btn-premium');
@@ -106,6 +107,7 @@
   }
 
   function actualizarServidorSeleccionado(servidor) {
+    servidorSeleccionado = servidor;
     const nombre = porId('txt-server-name');
     const version = porId('txt-server-version');
     if (nombre) nombre.textContent = servidor.nombre;
@@ -155,6 +157,39 @@
   async function iniciarInicio() {
     const nombreCuenta = document.querySelector('.account-player-name');
     const cerrarSesion = document.querySelector('.account-logout-btn');
+    const botonJugar = porId('btn-play');
+    const contenidoOriginalBotonJugar = botonJugar?.innerHTML || 'JUGAR';
+    let lanzamientoActivo = false;
+
+    const restaurarBotonJugar = () => {
+      lanzamientoActivo = false;
+      if (!botonJugar) return;
+      botonJugar.disabled = false;
+      botonJugar.innerHTML = contenidoOriginalBotonJugar;
+    };
+
+    const mostrarProgresoDeJuego = progreso => {
+      if (!botonJugar || !lanzamientoActivo || !progreso) return;
+
+      if (progreso.estado === 'descargando') {
+        const porcentaje = Number.isFinite(progreso.porcentaje) ? ` ${progreso.porcentaje}%` : '';
+        botonJugar.textContent = `DESCARGANDO...${porcentaje}`;
+        return;
+      }
+      if (progreso.estado === 'preparando') {
+        botonJugar.textContent = progreso.mensaje || 'PREPARANDO JUEGO...';
+        return;
+      }
+      if (progreso.estado === 'iniciado') {
+        botonJugar.textContent = 'JUEGO INICIADO';
+        return;
+      }
+      if (progreso.estado === 'cerrado' || progreso.estado === 'error') restaurarBotonJugar();
+    };
+
+    const dejarDeEscucharProgreso = api.onProgresoJuego(mostrarProgresoDeJuego);
+    window.addEventListener('beforeunload', dejarDeEscucharProgreso, { once: true });
+
     await cargarCatalogoServidores();
     porId('btn-settings')?.addEventListener('click', () => navegar('ajustes.html'));
     cerrarSesion?.addEventListener('click', async () => {
@@ -165,6 +200,30 @@
         console.error('[Bardo] No se pudo cerrar sesión:', error);
       }
     });
+    botonJugar?.addEventListener('click', async () => {
+      if (lanzamientoActivo || !servidorSeleccionado) return;
+
+      lanzamientoActivo = true;
+      botonJugar.disabled = true;
+      botonJugar.textContent = 'PREPARANDO JUEGO...';
+
+      try {
+        const perfil = await api.obtenerPerfil();
+        const resultado = await api.lanzarJuego({
+          instancia: servidorSeleccionado,
+          ram: perfil.ram
+        });
+
+        if (!resultado?.ok) {
+          console.error('[Bardo] El juego no pudo iniciarse:', resultado?.error);
+          restaurarBotonJugar();
+        }
+      } catch (error) {
+        console.error('[Bardo] Error al solicitar el lanzamiento:', error);
+        restaurarBotonJugar();
+      }
+    });
+
     if (!nombreCuenta) return;
 
     try {
@@ -177,11 +236,30 @@
     }
   }
 
-  function iniciarAjustes() {
+  async function iniciarAjustes() {
     const sliderRam = document.querySelector('.ram-slider');
     const campoRam = document.querySelector('.ram-number-field');
     porId('back-from-settings')?.addEventListener('click', () => navegar('inicio.html'));
-    if (sliderRam && campoRam) sliderRam.addEventListener('input', () => { campoRam.value = `${sliderRam.value}.0GB`; });
+    if (!sliderRam || !campoRam) return;
+
+    try {
+      const perfil = await api.obtenerPerfil();
+      const ram = Number(perfil.ram);
+      if (Number.isInteger(ram) && ram >= 2 && ram <= 16) sliderRam.value = String(ram);
+    } catch (error) {
+      console.error('[Bardo] No se pudo cargar la RAM guardada:', error);
+    }
+
+    const actualizarEtiquetaRam = () => { campoRam.value = `${sliderRam.value}.0GB`; };
+    actualizarEtiquetaRam();
+    sliderRam.addEventListener('input', actualizarEtiquetaRam);
+    sliderRam.addEventListener('change', async () => {
+      try {
+        await api.guardarRam(Number(sliderRam.value));
+      } catch (error) {
+        console.error('[Bardo] No se pudo guardar la RAM:', error);
+      }
+    });
   }
 
   if (!api) return console.error('[Bardo] El puente seguro no está disponible.');
