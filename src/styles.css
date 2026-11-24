@@ -188,6 +188,8 @@ body {
 /* 3. EL CONTENIDO PRINCIPAL */
 .main-content {
     flex: 1;
+    height: 100%;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -235,11 +237,69 @@ body {
     display: flex;
     align-items: center;
     gap: 10px; /* Separación entre el icono triángulo y el texto JUGAR */
+    margin-bottom: 25px;
     transition: all 0.2s ease;
 }
 
 .play-button:hover {
     background-color: #2f6b1e; 
+}
+
+/* Estados del motor de instancias: conservan exactamente la geometría de JUGAR. */
+#btn-play.estado-instalar {
+    background-color: #0067b8;
+}
+
+#btn-play.estado-instalar:hover {
+    background-color: #005da6;
+}
+
+#btn-play.estado-actualizar {
+    background-color: #AA00FF;
+}
+
+#btn-play.estado-actualizar:hover {
+    background-color: #8d00d4;
+}
+
+/* Misma lectura visual apagada que el acceso Microsoft mientras autentica. */
+#btn-play.estado-cargando,
+#btn-play.estado-cargando:hover,
+#btn-play.estado-cargando:disabled {
+    background-color: #282828;
+    color: #a0a0a0;
+    opacity: 0.7;
+    filter: brightness(0.7);
+    cursor: wait;
+    pointer-events: none;
+}
+
+/* Progreso tradicional anclado al borde inferior del área principal. */
+.play-progress {
+    display: none;
+    position: absolute;
+    left: 80px;
+    right: 0;
+    bottom: 0;
+    height: 30px;
+    margin: 0;
+    background-color: #111111;
+    border-radius: 0;
+    overflow: hidden;
+    transition: left 0.3s ease-in-out;
+}
+
+.play-progress-fill {
+    width: 0;
+    height: 30px;
+    background-color: #3c8527;
+    border-radius: 0;
+    transition: width 0.2s ease;
+}
+
+/* Respeta el ancho útil cuando la barra lateral flotante se expande. */
+.sidebar:hover + .main-content .play-progress {
+    left: 260px;
 }
 
 /* 5. CONTROL DE PANTALLAS */

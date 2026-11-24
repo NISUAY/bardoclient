@@ -10,6 +10,7 @@
   const porId = id => document.getElementById(id);
   const navegar = archivo => { window.location.href = archivo; };
   let servidorSeleccionado = null;
+  let alCambiarServidorSeleccionado = () => {};
 
   function iniciarLogin() {
     const btnPremium = porId('btn-premium');
@@ -112,6 +113,7 @@
     const version = porId('txt-server-version');
     if (nombre) nombre.textContent = servidor.nombre;
     if (version) version.textContent = etiquetaVersion(servidor);
+    void alCambiarServidorSeleccionado(servidor);
   }
 
   function renderizarServidores(servidores) {
@@ -158,38 +160,131 @@
     const nombreCuenta = document.querySelector('.account-player-name');
     const cerrarSesion = document.querySelector('.account-logout-btn');
     const botonJugar = porId('btn-play');
+    const barraProgreso = porId('play-progress');
+    const rellenoProgreso = porId('play-progress-fill');
     const contenidoOriginalBotonJugar = botonJugar?.innerHTML || 'JUGAR';
-    let lanzamientoActivo = false;
+    let operacionEnCurso = false;
+    let instalandoInstancia = false;
+    let iniciandoJuego = false;
+    let estadoInstancia = 'no-instalado';
+    let porcentajeVisual = 0;
+    let temporizadorProgreso = null;
+    let temporizadorOcultarProgreso = null;
+    const ICONO_INSTALAR = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-download"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /><path d="M7 11l5 5l5 -5" /><path d="M12 4l0 12" /></svg>';
+    const ICONO_ACTUALIZAR = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-refresh"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>';
+
+    const detenerAnimacionDeProgreso = () => {
+      if (temporizadorProgreso) clearInterval(temporizadorProgreso);
+      temporizadorProgreso = null;
+    };
+
+    const actualizarBarraDeProgreso = porcentaje => {
+      if (!barraProgreso || !rellenoProgreso) return;
+      porcentajeVisual = Math.max(0, Math.min(100, Math.round(Number(porcentaje) || 0)));
+      rellenoProgreso.style.width = `${porcentajeVisual}%`;
+      barraProgreso.setAttribute('aria-valuenow', String(porcentajeVisual));
+    };
+
+    const mostrarBarraDeProgreso = () => {
+      if (!barraProgreso || !botonJugar) return;
+      if (temporizadorOcultarProgreso) clearTimeout(temporizadorOcultarProgreso);
+      temporizadorOcultarProgreso = null;
+      barraProgreso.style.display = 'block';
+    };
+
+    const iniciarBarraDeProgreso = () => {
+      detenerAnimacionDeProgreso();
+      mostrarBarraDeProgreso();
+      actualizarBarraDeProgreso(0);
+      temporizadorProgreso = setInterval(() => {
+        if (porcentajeVisual < 90) actualizarBarraDeProgreso(porcentajeVisual + 4);
+      }, 260);
+    };
+
+    const ocultarBarraDeProgreso = () => {
+      detenerAnimacionDeProgreso();
+      if (temporizadorOcultarProgreso) clearTimeout(temporizadorOcultarProgreso);
+      temporizadorOcultarProgreso = null;
+      if (!barraProgreso) return;
+      barraProgreso.style.display = 'none';
+      actualizarBarraDeProgreso(0);
+    };
+
+    const completarYocultarBarraDeProgreso = () => {
+      detenerAnimacionDeProgreso();
+      actualizarBarraDeProgreso(100);
+      if (temporizadorOcultarProgreso) clearTimeout(temporizadorOcultarProgreso);
+      temporizadorOcultarProgreso = setTimeout(ocultarBarraDeProgreso, 200);
+    };
+
+    const aplicarEstadoBoton = estado => {
+      estadoInstancia = estado;
+      if (!botonJugar) return;
+      botonJugar.classList.remove('estado-instalar', 'estado-actualizar', 'estado-cargando');
+      botonJugar.disabled = false;
+      if (estado === 'no-instalado') {
+        botonJugar.classList.add('estado-instalar');
+        botonJugar.innerHTML = `${ICONO_INSTALAR} INSTALAR`;
+      } else if (estado === 'desactualizado') {
+        botonJugar.classList.add('estado-actualizar');
+        botonJugar.innerHTML = `${ICONO_ACTUALIZAR} ACTUALIZAR`;
+      } else {
+        botonJugar.innerHTML = contenidoOriginalBotonJugar;
+      }
+    };
+
+    const consultarEstadoInstancia = async () => {
+      if (!servidorSeleccionado || operacionEnCurso) return;
+      try {
+        const resultado = await api.verificarEstadoInstancia(servidorSeleccionado);
+        aplicarEstadoBoton(resultado?.estado || 'no-instalado');
+      } catch (error) {
+        console.error('[Bardo] No se pudo verificar la instancia:', error);
+        aplicarEstadoBoton('no-instalado');
+      }
+    };
 
     const restaurarBotonJugar = () => {
-      lanzamientoActivo = false;
-      if (!botonJugar) return;
-      botonJugar.disabled = false;
-      botonJugar.innerHTML = contenidoOriginalBotonJugar;
+      operacionEnCurso = false;
+      instalandoInstancia = false;
+      iniciandoJuego = false;
+      ocultarBarraDeProgreso();
+      aplicarEstadoBoton(estadoInstancia);
     };
 
     const mostrarProgresoDeJuego = progreso => {
-      if (!botonJugar || !lanzamientoActivo || !progreso) return;
+      if (!botonJugar || !operacionEnCurso || !progreso) return;
 
-      if (progreso.estado === 'descargando') {
-        const porcentaje = Number.isFinite(progreso.porcentaje) ? ` ${progreso.porcentaje}%` : '';
-        botonJugar.textContent = `DESCARGANDO...${porcentaje}`;
-        return;
+      if (progreso.estado === 'descargando' && Number.isFinite(progreso.porcentaje)) {
+        actualizarBarraDeProgreso(progreso.porcentaje);
       }
-      if (progreso.estado === 'preparando') {
-        botonJugar.textContent = progreso.mensaje || 'PREPARANDO JUEGO...';
-        return;
-      }
+
+      // Instalación y lanzamiento conservan un único mensaje sin progreso técnico.
+      if ((instalandoInstancia && !['instalado', 'error'].includes(progreso.estado)) ||
+          (iniciandoJuego && !['iniciado', 'cerrado', 'error'].includes(progreso.estado))) return;
+
       if (progreso.estado === 'iniciado') {
-        botonJugar.textContent = 'JUEGO INICIADO';
+        botonJugar.textContent = 'EN EJECUCIÓN';
+        completarYocultarBarraDeProgreso();
+        return;
+      }
+      if (progreso.estado === 'instalado') {
+        operacionEnCurso = false;
+        instalandoInstancia = false;
+        completarYocultarBarraDeProgreso();
+        void consultarEstadoInstancia();
         return;
       }
       if (progreso.estado === 'cerrado' || progreso.estado === 'error') restaurarBotonJugar();
     };
 
     const dejarDeEscucharProgreso = api.onProgresoJuego(mostrarProgresoDeJuego);
-    window.addEventListener('beforeunload', dejarDeEscucharProgreso, { once: true });
+    window.addEventListener('beforeunload', () => {
+      dejarDeEscucharProgreso();
+      ocultarBarraDeProgreso();
+    }, { once: true });
 
+    alCambiarServidorSeleccionado = consultarEstadoInstancia;
     await cargarCatalogoServidores();
     porId('btn-settings')?.addEventListener('click', () => navegar('ajustes.html'));
     cerrarSesion?.addEventListener('click', async () => {
@@ -201,22 +296,39 @@
       }
     });
     botonJugar?.addEventListener('click', async () => {
-      if (lanzamientoActivo || !servidorSeleccionado) return;
+      if (operacionEnCurso || !servidorSeleccionado) return;
 
-      lanzamientoActivo = true;
+      operacionEnCurso = true;
       botonJugar.disabled = true;
-      botonJugar.textContent = 'PREPARANDO JUEGO...';
+      const instanciaObjetivo = servidorSeleccionado;
+      const instalando = estadoInstancia !== 'listo';
+      instalandoInstancia = instalando;
+      iniciandoJuego = !instalando;
+      if (instalando) {
+        botonJugar.classList.add('estado-cargando');
+        botonJugar.textContent = estadoInstancia === 'desactualizado' ? 'ACTUALIZANDO' : 'INSTALANDO';
+      } else {
+        botonJugar.classList.add('estado-cargando');
+        botonJugar.textContent = 'INICIANDO';
+      }
+      iniciarBarraDeProgreso();
 
       try {
         const perfil = await api.obtenerPerfil();
-        const resultado = await api.lanzarJuego({
-          instancia: servidorSeleccionado,
+        const resultado = instalando
+          ? await api.instalarInstancia({ instancia: instanciaObjetivo })
+          : await api.lanzarJuego({
+          instancia: instanciaObjetivo,
           ram: perfil.ram
         });
 
         if (!resultado?.ok) {
-          console.error('[Bardo] El juego no pudo iniciarse:', resultado?.error);
+          console.error(`[Bardo] No se pudo ${instalando ? 'instalar' : 'iniciar'} la instancia:`, resultado?.error);
           restaurarBotonJugar();
+        } else if (instalando) {
+          operacionEnCurso = false;
+          instalandoInstancia = false;
+          await consultarEstadoInstancia();
         }
       } catch (error) {
         console.error('[Bardo] Error al solicitar el lanzamiento:', error);

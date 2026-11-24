@@ -25,6 +25,7 @@ const CATALOGO_SERVIDORES_RESPALDO = Object.freeze([
 let colaDeConfig = Promise.resolve();
 let loginMicrosoftEnCurso = false;
 let juegoEnCurso = false;
+let instalacionEnCurso = false;
 let ventanaPrincipal = null;
 
 app.setPath('userData', RUTA_DATOS);
@@ -95,7 +96,10 @@ function normalizarCatalogoRemoto(manifiesto) {
       activo: servidor.activo !== false,
       versionMinecraft: typeof servidor.versionMinecraft === 'string' ? servidor.versionMinecraft.trim() : '',
       requiereMods: Boolean(servidor.requiereMods),
-      cargadorMods: typeof servidor.cargadorMods === 'string' ? servidor.cargadorMods.trim() : 'vanilla'
+      cargadorMods: typeof servidor.cargadorMods === 'string' ? servidor.cargadorMods.trim() : 'vanilla',
+      urlModpack: typeof servidor.urlModpack === 'string' ? servidor.urlModpack.trim() : '',
+      versionModpack: typeof servidor.versionModpack === 'string' ? servidor.versionModpack.trim() : '',
+      hashModpack: typeof servidor.hashModpack === 'string' ? servidor.hashModpack.trim() : ''
     }))
     .filter(servidor => servidor.id && servidor.nombre && servidor.versionMinecraft);
 
@@ -203,8 +207,10 @@ function normalizarInstanciaParaLanzamiento(instancia) {
   if (!instancia || typeof instancia !== 'object') throw new Error('No hay una instancia válida seleccionada.');
 
   const id = typeof instancia.id === 'string' ? instancia.id.trim() : '';
+  const nombre = typeof instancia.nombre === 'string' ? instancia.nombre.trim() : '';
   const versionMinecraft = typeof instancia.versionMinecraft === 'string' ? instancia.versionMinecraft.trim() : '';
   const cargadorMods = typeof instancia.cargadorMods === 'string' ? instancia.cargadorMods.trim().toLowerCase() : 'vanilla';
+  const requiereMods = Boolean(instancia.requiereMods);
 
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) throw new Error('El ID de la instancia no es seguro.');
   if (!/^\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9._-]+)?$/.test(versionMinecraft)) {
@@ -212,7 +218,71 @@ function normalizarInstanciaParaLanzamiento(instancia) {
   }
 
   if (!['vanilla', 'fabric'].includes(cargadorMods)) throw new Error('El cargador de mods no es compatible.');
-  return { id, versionMinecraft, cargadorMods };
+  const urlModpack = typeof instancia.urlModpack === 'string' ? instancia.urlModpack.trim() : '';
+  const versionModpack = typeof instancia.versionModpack === 'string' ? instancia.versionModpack.trim() : '';
+  const hashModpack = typeof instancia.hashModpack === 'string' ? instancia.hashModpack.trim() : '';
+  if (urlModpack && !/^https:\/\//i.test(urlModpack)) throw new Error('La URL del modpack debe usar HTTPS.');
+  return { id, nombre, versionMinecraft, cargadorMods, requiereMods, urlModpack, versionModpack, hashModpack };
+}
+
+function rutaInstancia(id) {
+  return path.join(app.getPath('userData'), 'instances', id);
+}
+
+function rutaEstadoInstalacion(id) {
+  return path.join(rutaInstancia(id), 'estado-instalacion.json');
+}
+
+function datosClaveInstancia(instancia) {
+  return {
+    id: instancia.id,
+    versionMinecraft: instancia.versionMinecraft,
+    cargadorMods: instancia.cargadorMods,
+    requiereMods: instancia.requiereMods,
+    urlModpack: instancia.urlModpack || null,
+    versionModpack: instancia.versionModpack || null,
+    hashModpack: instancia.hashModpack || null
+  };
+}
+
+function huellaInstancia(instancia) {
+  return JSON.stringify(datosClaveInstancia(instancia));
+}
+
+async function leerEstadoInstalacion(instancia) {
+  try {
+    const estado = JSON.parse(await fs.readFile(rutaEstadoInstalacion(instancia.id), 'utf8'));
+    if (estado?.huella !== huellaInstancia(instancia)) return { estado: 'desactualizado' };
+    return { estado: 'listo' };
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('[Bardo] Estado de instalación inválido:', error.message);
+    return { estado: 'no-instalado' };
+  }
+}
+
+async function guardarEstadoInstalacion(instancia) {
+  const archivo = rutaEstadoInstalacion(instancia.id);
+  const temporal = `${archivo}.${process.pid}.${Date.now()}.tmp`;
+  const contenido = {
+    esquema: 1,
+    huella: huellaInstancia(instancia),
+    instancia: datosClaveInstancia(instancia),
+    instaladoEn: new Date().toISOString()
+  };
+  await fs.mkdir(path.dirname(archivo), { recursive: true });
+  await fs.writeFile(temporal, JSON.stringify(contenido, null, 2), 'utf8');
+  await fs.rename(temporal, archivo);
+}
+
+async function escribirInfoInstancia(instancia) {
+  const contenido = [
+    `Nombre: ${instancia.nombre || instancia.id}`,
+    `ID: ${instancia.id}`,
+    `Versión: ${instancia.versionMinecraft}`,
+    `Cargador: ${instancia.cargadorMods}`,
+    ''
+  ].join('\r\n');
+  await fs.writeFile(path.join(rutaInstancia(instancia.id), 'info.txt'), contenido, 'utf8');
 }
 
 function porcentajeDeProgreso(progreso) {
@@ -291,15 +361,6 @@ async function descargarJson(url, mensajeError) {
   }
 }
 
-async function existeArchivo(ruta) {
-  try {
-    await fs.access(ruta);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function prepararPerfilFabric(runtime, versionMinecraft) {
   const cargadores = await descargarJson(
     `${URL_META_FABRIC}/${encodeURIComponent(versionMinecraft)}`,
@@ -322,14 +383,32 @@ async function prepararPerfilFabric(runtime, versionMinecraft) {
     throw new Error('El perfil recibido de Fabric no es válido para esta versión de Minecraft.');
   }
 
+  const archivoBase = path.join(runtime, 'versions', versionMinecraft, `${versionMinecraft}.json`);
+  let base;
+  try {
+    base = JSON.parse(await fs.readFile(archivoBase, 'utf8'));
+  } catch {
+    throw new Error(`No se encontró el perfil base de Minecraft ${versionMinecraft}.`);
+  }
+  const mezclarArgumentos = (clave) => [
+    ...(Array.isArray(base.arguments?.[clave]) ? base.arguments[clave] : []),
+    ...(Array.isArray(perfil.arguments?.[clave]) ? perfil.arguments[clave] : [])
+  ];
+  const perfilMaterializado = {
+    ...base,
+    ...perfil,
+    id: idPerfil,
+    inheritsFrom: undefined,
+    libraries: [...(base.libraries || []), ...(perfil.libraries || [])],
+    arguments: { game: mezclarArgumentos('game'), jvm: mezclarArgumentos('jvm') }
+  };
+
   const carpetaPerfil = path.join(runtime, 'versions', idPerfil);
   const archivoPerfil = path.join(carpetaPerfil, `${idPerfil}.json`);
-  if (!await existeArchivo(archivoPerfil)) {
-    await fs.mkdir(carpetaPerfil, { recursive: true });
-    await fs.writeFile(archivoPerfil, JSON.stringify(perfil, null, 2), 'utf8');
-  }
+  await fs.mkdir(carpetaPerfil, { recursive: true });
+  await fs.writeFile(archivoPerfil, JSON.stringify(perfilMaterializado, null, 2), 'utf8');
 
-  return { number: versionMinecraft, type: 'release', custom: idPerfil, idPerfil, versionLoader };
+  return { number: idPerfil, type: 'release', custom: idPerfil, idPerfil, versionLoader };
 }
 
 async function registrarDiagnosticoJuego(instanciaId, mensaje) {
@@ -338,6 +417,94 @@ async function registrarDiagnosticoJuego(instanciaId, mensaje) {
   await fs.appendFile(rutaLog, `[${new Date().toISOString()}] ${seguro}\n`, 'utf8');
 }
 
+async function descargarRecursosConMclc({ instancia, config, java, runtime, gameDirectory, version, minecraftJar }) {
+  const launcher = new Client();
+  launcher.startMinecraft = () => ({ pid: null, instalacion: true });
+  launcher.on('progress', progreso => {
+    enviarProgresoJuego({
+      estado: 'descargando',
+      mensaje: `DESCARGANDO ${String(progreso?.type || 'ARCHIVOS').toUpperCase()}...`,
+      porcentaje: porcentajeDeProgreso(progreso)
+    });
+  });
+  launcher.on('debug', mensaje => {
+    registrarDiagnosticoJuego(instancia.id, mensaje).catch(() => undefined);
+    enviarProgresoJuego({ estado: 'preparando', mensaje: 'PREPARANDO ARCHIVOS DEL JUEGO...' });
+  });
+
+  const resultado = await launcher.launch({
+    authorization: await Authenticator.getAuth(config.nick),
+    root: runtime,
+    version,
+    memory: { max: `${config.ram}G`, min: '2G' },
+    javaPath: java.ejecutable,
+    overrides: { gameDirectory, ...(minecraftJar ? { minecraftJar } : {}) }
+  });
+  if (!resultado?.instalacion) throw new Error('No se pudieron descargar los recursos de Minecraft.');
+}
+
+ipcMain.handle('instancia:verificar-estado', async (_evento, datos = {}) => {
+  try {
+    const instancia = normalizarInstanciaParaLanzamiento(datos.instancia || datos);
+    return await leerEstadoInstalacion(instancia);
+  } catch (error) {
+    return { estado: 'no-instalado', error: error.message || 'Instancia inválida.' };
+  }
+});
+
+ipcMain.handle('instancia:instalar', async (_evento, datos = {}) => {
+  if (juegoEnCurso || instalacionEnCurso) return { ok: false, error: 'Ya hay una instalación o un juego en curso.' };
+
+  try {
+    const instancia = normalizarInstanciaParaLanzamiento(datos.instancia);
+    const config = await leerConfig();
+    if (!config.nick) throw new Error('Debes iniciar sesión antes de instalar la instancia.');
+    const java = resolverJavaCompatible();
+    if (!java) throw new Error('Minecraft 1.20.1 requiere Java 17 o superior.');
+
+    const runtime = path.join(app.getPath('userData'), 'runtime');
+    const gameDirectory = path.join(rutaInstancia(instancia.id), '.minecraft');
+    await fs.mkdir(gameDirectory, { recursive: true });
+    instalacionEnCurso = true;
+    enviarProgresoJuego({ estado: 'preparando', mensaje: 'PREPARANDO INSTALACIÓN...' });
+
+    await descargarRecursosConMclc({
+      instancia,
+      config,
+      java,
+      runtime,
+      gameDirectory,
+      version: { number: instancia.versionMinecraft, type: 'release' }
+    });
+
+    if (instancia.cargadorMods === 'fabric') {
+      enviarProgresoJuego({ estado: 'preparando', mensaje: 'INSTALANDO FABRIC...' });
+      const versionFabric = await prepararPerfilFabric(runtime, instancia.versionMinecraft);
+      const jarVanilla = path.join(runtime, 'versions', instancia.versionMinecraft, `${instancia.versionMinecraft}.jar`);
+      await descargarRecursosConMclc({
+        instancia,
+        config,
+        java,
+        runtime,
+        gameDirectory,
+        version: versionFabric,
+        minecraftJar: jarVanilla
+      });
+    }
+
+    await guardarEstadoInstalacion(instancia);
+    await escribirInfoInstancia(instancia);
+    instalacionEnCurso = false;
+    enviarProgresoJuego({ estado: 'instalado', mensaje: 'JUGAR' });
+    return { ok: true, estado: 'listo' };
+  } catch (error) {
+    instalacionEnCurso = false;
+    console.error('[Bardo] Error al instalar la instancia:', error);
+    enviarProgresoJuego({ estado: 'error', mensaje: 'NO SE PUDO INSTALAR.' });
+    return { ok: false, error: error.message || 'No se pudo instalar la instancia.' };
+  }
+});
+
 ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
   if (juegoEnCurso) return { ok: false, error: 'Ya hay un juego iniciándose o en ejecución.' };
 
@@ -345,6 +512,10 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
     const instancia = normalizarInstanciaParaLanzamiento(datos.instancia);
     const config = await leerConfig();
     if (!config.nick) throw new Error('Debes iniciar sesión antes de lanzar el juego.');
+    const estadoInstalacion = await leerEstadoInstalacion(instancia);
+    if (estadoInstalacion.estado !== 'listo') {
+      throw new Error('La instancia debe instalarse o actualizarse antes de jugar.');
+    }
 
     const ramSolicitada = Number(datos.ram ?? config.ram);
     const ram = Number.isInteger(ramSolicitada) && ramSolicitada >= 2 && ramSolicitada <= 16
@@ -372,6 +543,7 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
 
     const launcher = new Client();
     let ultimoDiagnostico = '';
+    let procesoConfirmado = false;
     const registrarSalida = mensaje => {
       ultimoDiagnostico = String(mensaje).slice(-2000);
       registrarDiagnosticoJuego(instancia.id, mensaje).catch(error => {
@@ -390,7 +562,15 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
       console.info('[MCLC]', String(mensaje).replace(/--accessToken\s+\S+/gi, '--accessToken [oculto]'));
       enviarProgresoJuego({ estado: 'preparando', mensaje: 'PREPARANDO ARCHIVOS DEL JUEGO...' });
     });
-    launcher.on('data', mensaje => registrarSalida(mensaje));
+    const confirmarProcesoIniciado = () => {
+      if (procesoConfirmado) return;
+      procesoConfirmado = true;
+      enviarProgresoJuego({ estado: 'iniciado', mensaje: 'EN EJECUCIÓN' });
+    };
+    launcher.on('data', mensaje => {
+      registrarSalida(mensaje);
+      confirmarProcesoIniciado();
+    });
     launcher.on('close', codigo => {
       juegoEnCurso = false;
       if (codigo === 0) {
@@ -411,7 +591,12 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
       version,
       memory: { max: `${ram}G`, min: '2G' },
       javaPath: java.ejecutable,
-      overrides: { gameDirectory }
+      overrides: {
+        gameDirectory,
+        ...(instancia.cargadorMods === 'fabric'
+          ? { minecraftJar: path.join(runtime, 'versions', instancia.versionMinecraft, `${instancia.versionMinecraft}.jar`) }
+          : {})
+      }
     });
 
     if (!proceso) {
@@ -420,7 +605,9 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
       return { ok: false, error: 'Minecraft no pudo iniciarse. Revisa Java y la consola del launcher.' };
     }
 
-    enviarProgresoJuego({ estado: 'iniciado', mensaje: 'JUEGO INICIADO.' });
+    // Respaldo: spawn exitoso ya confirma que Java abrió el proceso, incluso si
+    // todavía no escribió una línea en stdout/stderr.
+    confirmarProcesoIniciado();
     return { ok: true, pid: proceso.pid, instanciaId: instancia.id, cargadorMods: instancia.cargadorMods };
   } catch (error) {
     juegoEnCurso = false;
