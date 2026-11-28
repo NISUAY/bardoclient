@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const fsSync = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const { Client, Authenticator } = require('minecraft-launcher-core');
 const { Auth } = require('msmc');
@@ -12,6 +13,8 @@ const RUTA_DATOS = path.join(app.getPath('appData'), 'bardoclient');
 const ARCHIVO_CONFIG = path.join(RUTA_DATOS, 'config.json');
 const URL_MANIFIESTO_REMOTO = 'https://raw.githubusercontent.com/NISUAY/bardoclient/main/manifiesto.json';
 const URL_META_FABRIC = 'https://meta.fabricmc.net/v2/versions/loader';
+const RAM_MINIMA_GB = 0.5;
+const RAM_MAXIMA_GB = 32;
 const CATALOGO_SERVIDORES_RESPALDO = Object.freeze([
   Object.freeze({
     id: 'srv_01',
@@ -27,8 +30,26 @@ let loginMicrosoftEnCurso = false;
 let juegoEnCurso = false;
 let instalacionEnCurso = false;
 let ventanaPrincipal = null;
+let catalogoRemotoEnSesion = null;
 
 app.setPath('userData', RUTA_DATOS);
+
+function obtenerLimiteRamRecomendado() {
+  const totalGb = os.totalmem() / (1024 ** 3);
+  const recomendado = Math.floor((totalGb - 1) * 10) / 10;
+  return Math.max(1.5, Math.min(RAM_MAXIMA_GB, recomendado));
+}
+
+function normalizarRam(ram) {
+  const valor = Number(ram);
+  if (!Number.isFinite(valor)) return Math.min(4, obtenerLimiteRamRecomendado());
+  return Math.round(Math.max(RAM_MINIMA_GB, Math.min(obtenerLimiteRamRecomendado(), valor)) * 10) / 10;
+}
+
+function opcionesMemoriaMclc(ramGb) {
+  const maximoMb = Math.round(Number(ramGb) * 1024);
+  return { max: maximoMb, min: Math.min(512, maximoMb) };
+}
 
 function normalizarConfig(config = {}) {
   const cuentaMicrosoft = config.tipoCuenta === 'microsoft';
@@ -39,7 +60,8 @@ function normalizarConfig(config = {}) {
     ...(cuentaMicrosoft || cuentaOffline ? { tipoCuenta: config.tipoCuenta } : {}),
     ...(cuentaMicrosoft && typeof config.token === 'string' ? { token: config.token } : { token: null }),
     ...(cuentaMicrosoft && typeof config.uuid === 'string' ? { uuid: config.uuid } : {}),
-    ram: Number.isInteger(config.ram) && config.ram >= 2 && config.ram <= 16 ? config.ram : 4
+    ram: normalizarRam(config.ram),
+    fullscreen: Boolean(config.fullscreen)
   };
 }
 
@@ -71,6 +93,67 @@ function cifrarToken(token) {
     throw new Error('El cifrado seguro del sistema no está disponible.');
   }
   return `dpapi:${safeStorage.encryptString(token).toString('base64')}`;
+}
+
+function descifrarToken(token) {
+  if (typeof token !== 'string' || !token.startsWith('dpapi:')) {
+    throw new Error('La sesión de Microsoft guardada no es válida. Inicia sesión nuevamente.');
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('El cifrado seguro del sistema no está disponible. Inicia sesión nuevamente.');
+  }
+  try {
+    return JSON.parse(safeStorage.decryptString(Buffer.from(token.slice(6), 'base64')));
+  } catch {
+    throw new Error('No se pudo leer la sesión de Microsoft. Inicia sesión nuevamente.');
+  }
+}
+
+function crearClienteMicrosoft() {
+  return new Auth({
+    client_id: '00000000402b5328',
+    redirect: 'https://login.live.com/oauth20_desktop.srf',
+    prompt: 'select_account'
+  });
+}
+
+async function guardarSesionMicrosoft(minecraft) {
+  if (!minecraft.profile?.name || !minecraft.profile.id || !minecraft.mcToken) {
+    throw new Error('Microsoft no devolvió un perfil válido de Minecraft Java.');
+  }
+  const credenciales = minecraft.getToken(true);
+  const secretoCifrado = cifrarToken(JSON.stringify({
+    accessToken: minecraft.mcToken,
+    refreshToken: credenciales.refresh,
+    expiraEn: credenciales.exp,
+    xuid: credenciales.xuid
+  }));
+  await actualizarConfig({
+    nick: minecraft.profile.name,
+    tipoCuenta: 'microsoft',
+    token: secretoCifrado,
+    uuid: minecraft.profile.id
+  });
+}
+
+async function obtenerAutorizacionDeJuego(config) {
+  if (config.tipoCuenta !== 'microsoft') return Authenticator.getAuth(config.nick);
+
+  const sesion = descifrarToken(config.token);
+  if (typeof sesion.refreshToken !== 'string' || !sesion.refreshToken) {
+    throw new Error('La sesión de Microsoft expiró. Inicia sesión nuevamente.');
+  }
+
+  try {
+    // Se renueva antes de lanzar: cubre tokens vencidos y mantiene la sesión oficial.
+    const xbox = await crearClienteMicrosoft().refresh(sesion.refreshToken);
+    const minecraft = await xbox.getMinecraft();
+    await guardarSesionMicrosoft(minecraft);
+    return minecraft.mclc();
+  } catch (error) {
+    console.warn('[Bardo] No se pudo renovar la sesión Microsoft:', error.message);
+    throw new Error('La sesión de Microsoft ya no es válida. Inicia sesión nuevamente.');
+  }
 }
 
 async function prepararAlmacenamiento() {
@@ -124,8 +207,13 @@ async function descargarCatalogoRemoto() {
 }
 
 ipcMain.handle('pizarra:leer-remota', async () => {
+  if (catalogoRemotoEnSesion) {
+    return { servidores: catalogoRemotoEnSesion, origen: 'memoria' };
+  }
   try {
-    return { servidores: await descargarCatalogoRemoto(), origen: 'remoto' };
+    const servidores = await descargarCatalogoRemoto();
+    catalogoRemotoEnSesion = servidores;
+    return { servidores, origen: 'remoto' };
   } catch (error) {
     console.warn('[Bardo] No se pudo leer el manifiesto remoto; se usará el catálogo de respaldo:', error.message);
     return { servidores: CATALOGO_SERVIDORES_RESPALDO, origen: 'respaldo' };
@@ -141,15 +229,37 @@ ipcMain.handle('config:guardar-nick', async (_evento, nick) => {
 // Perfil de sólo lectura: el renderer nunca recibe token ni credenciales.
 ipcMain.handle('config:obtener-perfil', async () => {
   await colaDeConfig;
-  const { nick, tipoCuenta, uuid, ram } = await leerConfig();
-  return { nick: nick || null, tipoCuenta: tipoCuenta || null, uuid: uuid || null, ram };
+  const { nick, tipoCuenta, uuid, ram, fullscreen } = await leerConfig();
+  return { nick: nick || null, tipoCuenta: tipoCuenta || null, uuid: uuid || null, ram, fullscreen };
 });
 
 ipcMain.handle('config:guardar-ram', async (_evento, ram) => {
   const valor = Number(ram);
-  if (!Number.isInteger(valor) || valor < 2 || valor > 16) throw new Error('La RAM debe estar entre 2 y 16 GB.');
-  await actualizarConfig({ ram: valor });
-  return { ok: true, ram: valor };
+  const limite = obtenerLimiteRamRecomendado();
+  if (!Number.isFinite(valor) || valor < RAM_MINIMA_GB || valor > limite) {
+    throw new Error(`La RAM debe estar entre ${RAM_MINIMA_GB} y ${limite} GB.`);
+  }
+  const redondeado = Math.round(valor * 10) / 10;
+  await actualizarConfig({ ram: redondeado });
+  return { ok: true, ram: redondeado };
+});
+
+ipcMain.handle('config:obtener-ajustes', async () => {
+  await colaDeConfig;
+  const { ram, fullscreen } = await leerConfig();
+  return {
+    ram,
+    fullscreen,
+    ramMinima: RAM_MINIMA_GB,
+    ramMaxima: obtenerLimiteRamRecomendado(),
+    ramTotal: Math.floor((os.totalmem() / (1024 ** 3)) * 10) / 10
+  };
+});
+
+ipcMain.handle('config:guardar-fullscreen', async (_evento, fullscreen) => {
+  if (typeof fullscreen !== 'boolean') throw new Error('El valor de pantalla completa no es válido.');
+  await actualizarConfig({ fullscreen });
+  return { ok: true, fullscreen };
 });
 
 ipcMain.handle('auth:cerrar-sesion', async () => {
@@ -161,11 +271,7 @@ ipcMain.handle('auth:microsoft', async () => {
   if (loginMicrosoftEnCurso) throw new Error('Ya hay un inicio de sesión en curso.');
   loginMicrosoftEnCurso = true;
   try {
-    const auth = new Auth({
-      client_id: '00000000402b5328',
-      redirect: 'https://login.live.com/oauth20_desktop.srf',
-      prompt: 'select_account'
-    });
+    const auth = crearClienteMicrosoft();
     const xbox = await auth.launch('electron', {
       parent: BrowserWindow.getFocusedWindow(),
       modal: true,
@@ -176,22 +282,7 @@ ipcMain.handle('auth:microsoft', async () => {
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true }
     });
     const minecraft = await xbox.getMinecraft();
-    if (!minecraft.profile?.name || !minecraft.profile.id || !minecraft.mcToken) {
-      throw new Error('Microsoft no devolvió un perfil válido de Minecraft Java.');
-    }
-    const credenciales = minecraft.getToken(true);
-    const secretoCifrado = cifrarToken(JSON.stringify({
-      accessToken: minecraft.mcToken,
-      refreshToken: credenciales.refresh,
-      expiraEn: credenciales.exp,
-      xuid: credenciales.xuid
-    }));
-    await actualizarConfig({
-      nick: minecraft.profile.name,
-      tipoCuenta: 'microsoft',
-      token: secretoCifrado,
-      uuid: minecraft.profile.id
-    });
+    await guardarSesionMicrosoft(minecraft);
     return { ok: true, username: minecraft.profile.name };
   } finally {
     loginMicrosoftEnCurso = false;
@@ -417,6 +508,35 @@ async function registrarDiagnosticoJuego(instanciaId, mensaje) {
   await fs.appendFile(rutaLog, `[${new Date().toISOString()}] ${seguro}\n`, 'utf8');
 }
 
+async function repararArchivosCliente() {
+  if (juegoEnCurso || instalacionEnCurso) throw new Error('Cierra el juego o espera a que termine la instalación antes de reparar.');
+
+  const runtime = path.join(app.getPath('userData'), 'runtime');
+  const instances = path.join(app.getPath('userData'), 'instances');
+  await fs.rm(runtime, { recursive: true, force: true });
+
+  let entradas = [];
+  try {
+    entradas = await fs.readdir(instances, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  await Promise.all(entradas
+    .filter(entrada => entrada.isDirectory())
+    .map(entrada => fs.rm(path.join(instances, entrada.name, 'estado-instalacion.json'), { force: true })));
+
+  return { ok: true };
+}
+
+ipcMain.handle('cliente:reparar-archivos', async () => {
+  try {
+    return await repararArchivosCliente();
+  } catch (error) {
+    console.error('[Bardo] Error al reparar archivos:', error);
+    return { ok: false, error: error.message || 'No se pudieron reparar los archivos.' };
+  }
+});
+
 async function descargarRecursosConMclc({ instancia, config, java, runtime, gameDirectory, version, minecraftJar }) {
   const launcher = new Client();
   launcher.startMinecraft = () => ({ pid: null, instalacion: true });
@@ -436,7 +556,7 @@ async function descargarRecursosConMclc({ instancia, config, java, runtime, game
     authorization: await Authenticator.getAuth(config.nick),
     root: runtime,
     version,
-    memory: { max: `${config.ram}G`, min: '2G' },
+    memory: opcionesMemoriaMclc(config.ram),
     javaPath: java.ejecutable,
     overrides: { gameDirectory, ...(minecraftJar ? { minecraftJar } : {}) }
   });
@@ -518,7 +638,7 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
     }
 
     const ramSolicitada = Number(datos.ram ?? config.ram);
-    const ram = Number.isInteger(ramSolicitada) && ramSolicitada >= 2 && ramSolicitada <= 16
+    const ram = Number.isFinite(ramSolicitada) && ramSolicitada >= RAM_MINIMA_GB && ramSolicitada <= obtenerLimiteRamRecomendado()
       ? ramSolicitada
       : config.ram;
     const java = resolverJavaCompatible();
@@ -585,11 +705,13 @@ ipcMain.handle('juego:lanzar', async (_evento, datos = {}) => {
       }
     });
 
+    const authorization = await obtenerAutorizacionDeJuego(config);
     const proceso = await launcher.launch({
-      authorization: await Authenticator.getAuth(config.nick),
+      authorization,
       root: runtime,
       version,
-      memory: { max: `${ram}G`, min: '2G' },
+      memory: opcionesMemoriaMclc(ram),
+      window: { fullscreen: config.fullscreen },
       javaPath: java.ejecutable,
       overrides: {
         gameDirectory,

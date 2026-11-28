@@ -198,6 +198,21 @@ body {
     position: relative;
 }
 
+/* Evita mostrar el estado estático antes de resolver catálogo e instalación. */
+.main-action-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+}
+
+.main-action-content.is-ready {
+    visibility: visible;
+    opacity: 1;
+}
+
 .selected-server-info {
     position: absolute;
     top: 50%;
@@ -235,9 +250,12 @@ body {
     border-radius: 12px;
     cursor: pointer;
     display: flex;
+    justify-content: center;
     align-items: center;
     gap: 10px; /* Separación entre el icono triángulo y el texto JUGAR */
     margin-bottom: 25px;
+    box-sizing: border-box;
+    white-space: nowrap;
     transition: all 0.2s ease;
 }
 
@@ -626,6 +644,7 @@ body {
     display: flex;
     align-items: center;
     gap: 20px;
+    margin-left: 25px;
     margin-top: 10px;
 }
 
@@ -674,9 +693,17 @@ body {
     padding: 10px 15px;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
     width: 120px;
     box-sizing: border-box;
+}
+
+.ram-number-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 4px;
 }
 
 .ram-number-field {
@@ -685,9 +712,16 @@ body {
     color: #ffffff;
     font-size: 15px;
     font-weight: 700;
-    text-align: right;
-    width: 100%;
+    text-align: center;
+    width: 2ch;
+    min-width: 2ch;
     outline: none;
+}
+
+.ram-unit {
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 700;
 }
 
 .ram-sub-text {
@@ -695,6 +729,7 @@ body {
     color: #565656;
     font-weight: 600;
     margin-top: 2px;
+    text-align: center;
 }
 
 /* INTERRUPTOR PANTALLA COMPLETA */

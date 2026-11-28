@@ -30,14 +30,17 @@
             <!-- Zona interactiva de la RAM (Barra + Recuadro al lado) -->
             <div class="setting-control-side-ram">
                 <div class="slider-wrapper">
-                    <span class="slider-limit-text">2.0GB</span>
-                    <input type="range" class="ram-slider" min="2" max="16" value="4">
+                    <span class="slider-limit-text">500 MB</span>
+                    <input type="range" class="ram-slider" min="0.5" max="16" step="0.1" value="4">
                     <span class="slider-limit-text">16.0GB</span>
                 </div>
                 <!-- Tarjeta robusta derecha del número igual a tu captura -->
                 <div class="ram-input-badge">
-                    <input type="text" class="ram-number-field" value="4.0GB">
-                    <span class="ram-sub-text">libre para asignar</span>
+                    <div class="ram-number-line">
+                        <input type="text" class="ram-number-field" value="4.0" inputmode="decimal" aria-label="Memoria RAM asignada en gigabytes">
+                        <span class="ram-unit" id="ram-unit">GB</span>
+                    </div>
+                    <span class="ram-sub-text" id="ram-max-info">máx. 16.0 GB</span>
                 </div>
             </div>
         </div>
@@ -62,7 +65,7 @@
                 <h3 class="setting-title">Soporte del Cliente</h3>
                 <p class="setting-description">Si experimentas tirones o errores al entrar a un evento, usa esta opción.</p>
                 
-                <button class="auth-btn btn-guest" style="width: 280px; margin-top: 15px; height: 48px;">
+                <button class="auth-btn btn-guest" id="btn-repair-client" style="width: 280px; margin-top: 15px; height: 48px;">
                     Reparar Archivos del Cliente
                 </button>
             </div>

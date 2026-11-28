@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('bardo', Object.freeze({
   guardarNick: nick => ipcRenderer.invoke('config:guardar-nick', nick),
   guardarRam: ram => ipcRenderer.invoke('config:guardar-ram', ram),
+  obtenerAjustes: () => ipcRenderer.invoke('config:obtener-ajustes'),
+  guardarFullscreen: fullscreen => ipcRenderer.invoke('config:guardar-fullscreen', fullscreen),
+  repararArchivosCliente: () => ipcRenderer.invoke('cliente:reparar-archivos'),
   obtenerPerfil: () => ipcRenderer.invoke('config:obtener-perfil'),
   leerPizarraRemota: () => ipcRenderer.invoke('pizarra:leer-remota'),
   verificarEstadoInstancia: instancia => ipcRenderer.invoke('instancia:verificar-estado', { instancia }),
